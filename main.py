@@ -50,7 +50,7 @@ def make_device_id(alternative: int = 0) -> str:
     full_id = "cf8b5eff3cf267a736e0371c55108987"
 
     try:
-        with open("/etc/machine-ida") as f:
+        with open("/etc/machine-id") as f:
             full_id = f.read().splitlines()[0]
     except FileNotFoundError:
         pass
@@ -109,6 +109,7 @@ class ProgramStates(Enum):
     STEP_CONNECTION_START = auto()
     STEP_CONNECTION_ACTIVE = auto()
     STEP_CONNECTION_DONE = auto()
+    STEP_CONNECTION_RESTART = auto()
     STEP_KILL_PROGRAM = auto()
 
 
@@ -513,7 +514,7 @@ def thread_timeout_advertisement(timeout: int) -> None:
 
     for sleep_timer in range(timeout):
         if len(devices_connected) >= devices_connect_to:
-            print("Reached connection goal!")
+            print_info_dated_msg("Reached connection goal!")
             break
 
         if current_step == ProgramStates.STEP_KILL_PROGRAM:
@@ -581,21 +582,21 @@ def thread_connect_discover_and_advertise() -> None:
                 mutex_role_to_device.acquire()
                 if path not in role_to_device or \
                         role_to_device[path] == NodeModes.NONE:
-                    print(f"Connect to {dev_name} ({dev_address})..")
+                    print_info_dated_msg(f"Connect to {dev_name} ({dev_address})..")
                     try:
                         connect_to_devices(glob_connection_bus,
                                            {path: raw_data})
                         role_to_device[path] = NodeModes.CENTRAL
 
                     except Exception as e:
-                        print("Failed to connect", e)
+                        print_info_dated_msg("Failed to connect", e)
                 mutex_role_to_device.release()
 
         print_info_dated_msg(
             "Total connected devices:", len(devices_connected))
 
         if len(devices_connected) >= devices_connect_to:
-            print("Reached device goal!")
+            print_info_dated_msg("Reached device goal!")
             discover_and_advertise_stop()
             return
 
@@ -614,7 +615,10 @@ def thread_check_connected_devices(bus: BusConnection) -> None:
         devices_found_copy = devices_connected.copy()
 
         if len(devices_found_copy) == 0:
-            print_info_dated_msg("No connected devices...")
+            print_info_dated_msg("No connected devices... Going back to automatic connection mode.")
+            connection_monitor_stop()
+            current_step = ProgramStates.STEP_CONNECTION_RESTART
+            return
 
         for path, raw_properties in devices_found_copy.items():
             name = "Unknown"
@@ -805,14 +809,14 @@ def connect(device_inf: dbus.Interface) -> int:
     try:
         device_inf.Connect()
     except dbus.exceptions.DBusException as e:
-        print("Failed to connect")
-        print(e.get_dbus_name())
-        print(e.get_dbus_message())
+        print_info_dated_msg("Failed to connect")
+        print_info_dated_msg(e.get_dbus_name())
+        print_info_dated_msg(e.get_dbus_message())
         if "UnknownObject" in e.get_dbus_name():
-            print("Try scanning first to resolve this problem")
+            print_info_dated_msg("Try scanning first to resolve this problem")
         return bluetooth_constants.RESULT_EXCEPTION
     else:
-        print("Connected OK")
+        print_info_dated_msg("Connected OK")
         return bluetooth_constants.RESULT_OK
 
 
@@ -825,12 +829,12 @@ def disconnect(device_inf: dbus.Interface) -> int:
     try:
         device_inf.Disconnect()
     except dbus.exceptions.DBusException as e:
-        print("Failed to disconnect")
-        print(e.get_dbus_name())
-        print(e.get_dbus_message())
+        print_info_dated_msg("Failed to disconnect")
+        print_info_dated_msg(e.get_dbus_name())
+        print_info_dated_msg(e.get_dbus_message())
         return bluetooth_constants.RESULT_EXCEPTION
     else:
-        print("Disconnected OK")
+        print_info_dated_msg("Disconnected OK")
         return bluetooth_constants.RESULT_OK
 
 
@@ -844,9 +848,9 @@ def advertising_setup(bus: BusConnection) -> None:
         device_name
 
     if adv_mgr_interface is not None and adv is not None:
-        print("Restart: Advertisement")
+        print_info_dated_msg("Restart: Advertisement")
     else:
-        print("Start: Advertisement")
+        print_info_dated_msg("Start: Advertisement")
         adapter_path = \
             bluetooth_constants.BLUEZ_NAMESPACE + \
             bluetooth_constants.ADAPTER_NAME
@@ -857,7 +861,7 @@ def advertising_setup(bus: BusConnection) -> None:
                 bluetooth_constants.ADVERTISING_MANAGER_INTERFACE)
         adv = Advertisement(bus, 0, 'peripheral', device_name)
 
-    print("Advertising as:" + adv.local_name)
+    print_info_dated_msg(f"Advertising as: {adv.local_name}")
 
 
 def advertising_initiate(
@@ -889,7 +893,7 @@ def advertising_initiate(
         raise Exception("'adv' must be initiated!")
 
     for tries in range(5):
-        print("Advertisement initiate: Trial #" + str(tries + 1) + ".")
+        print_info_dated_msg("Advertisement initiate: Trial #" + str(tries + 1) + ".")
         try:
             signal_adv_add = bus.add_signal_receiver(
                 callback_added,
@@ -922,16 +926,16 @@ def advertising_initiate(
             if e.get_dbus_name() == "org.bluez.Error.AlreadyExists":
                 break
             else:
-                print("Advertisement initiate: Failed to start!")
-                print("-", e.get_dbus_name())
-                print("-", e.get_dbus_message())
+                print_info_dated_msg("Advertisement initiate: Failed to start!")
+                print_info_dated_msg("-", e.get_dbus_name())
+                print_info_dated_msg("-", e.get_dbus_message())
                 if tries >= 4:
-                    print("Failed to advertise!")
+                    print_info_dated_msg("Failed to advertise!")
                     sys.exit(1)
         else:
             break
 
-    print("Advertisement initiated!")
+    print_info_dated_msg("Advertisement initiated!")
 
 
 def advertising_start(bus: BusConnection, timeout: int) -> None:
@@ -1014,12 +1018,7 @@ def discover_and_advertise_start(bus: BusConnection, timeout: int) -> None:
             adapter_object, bluetooth_constants.ADAPTER_INTERFACE)
 
     # Advertise Setup
-    adv_mgr_interface = \
-        dbus.Interface(
-            bus.get_object(
-                bluetooth_constants.BLUEZ_SERVICE_NAME, adapter_path),
-            bluetooth_constants.ADVERTISING_MANAGER_INTERFACE)
-    adv = Advertisement(bus, 0, 'peripheral', device_name)
+    advertising_setup(bus)
 
     # Discovery Start
     adapter_interface.StartDiscovery(byte_arrays=True)
@@ -1119,9 +1118,9 @@ def connection_monitor_start(
     # Scan (to get RSSI)
     global adapter_interface
     if adapter_interface is not None:
-        print("Restart: Discovery")
+        print_info_dated_msg("Restart: Discovery")
     else:
-        print("Start: Discovery")
+        print_info_dated_msg("Start: Discovery")
         adapter_path = \
             bluetooth_constants.BLUEZ_NAMESPACE + \
             bluetooth_constants.ADAPTER_NAME
@@ -1249,12 +1248,12 @@ def handle_register_ad_cb() -> None:
 
     :return: Nothing
     """
-    print('Advertisement registered OK')
+    print_info_dated_msg('Advertisement registered OK')
 
 
 def handle_register_ad_error_cb(error: any) -> None:
     global mainloop
-    print(f"Error: Failed to register advertisement {error}")
+    print_info_dated_msg(f"Error: Failed to register advertisement {error}")
     mainloop.quit()
 
 
@@ -1555,17 +1554,23 @@ if __name__ == '__main__':
     # Program Modes
     if args.program == "monitor":
         print("Program mode: Connection Monitor")
-        if args.node == "auto":
-            print("Node mode: Automatic")
-            run_connection_monitor_mode_auto_node(bus_connection)
+        while current_step != ProgramStates.STEP_KILL_PROGRAM:
+            if args.node == "auto":
+                print("Node mode: Automatic")
+                run_connection_monitor_mode_auto_node(bus_connection)
 
-        elif args.node == "central":
-            print("Node mode: Central")
-            run_connection_monitor_mode_central_node(bus_connection)
+            elif args.node == "central":
+                print("Node mode: Central")
+                run_connection_monitor_mode_central_node(bus_connection)
 
-        elif args.node == "peripheral":
-            print("Node mode: Peripheral")
-            run_connection_monitor_mode_peripheral_node(bus_connection)
+            elif args.node == "peripheral":
+                print("Node mode: Peripheral")
+                run_connection_monitor_mode_peripheral_node(bus_connection)
+
+            if current_step == ProgramStates.STEP_CONNECTION_RESTART:
+                print_info_dated_msg("Restarting program mode: Connection Monitor..")
+            else:
+                break
 
     elif args.program == "message":
         print("Program mode: Message")
@@ -1582,5 +1587,3 @@ if __name__ == '__main__':
             # TODO: Implement
 
     print("Done with program!")
-
-# Build 3
