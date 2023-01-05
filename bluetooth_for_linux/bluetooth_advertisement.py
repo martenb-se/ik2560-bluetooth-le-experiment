@@ -43,7 +43,7 @@ class Advertisement(dbus.service.Object):
             properties['Includes'] = dbus.Array(["tx-power"], signature='s')
         if self.data is not None:
             properties['Data'] = dbus.Dictionary(self.data, signature='yv')
-        print(properties)
+        # print(properties)
         return {bluetooth_constants.ADVERTISING_MANAGER_INTERFACE: properties}
 
     def get_path(self, adv_id=0):
