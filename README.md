@@ -13,10 +13,6 @@ Coming soon.
 * A **computer** to connect to and communicate with the Raspberry Pi 3 Model B+
   * This guide currently supports installation instructions for **Ubuntu 22**
 
-### Software
-* **STM32CubeIDE 1.7.0**, [Download page](https://www.st.com/en/development-tools/stm32cubeide.html).
-  * **Installed with ST-LINK and/or J-Link**, Make sure to have installed with this option enabled.
-
 ## Good To know
 ### Official Documentation
 * **Bluetooth® Technology for Linux Developers**, [link to download page on bluetooth.com](https://www.bluetooth.com/bluetooth-resources/bluetooth-for-linux/)
