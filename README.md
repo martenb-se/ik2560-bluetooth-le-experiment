@@ -83,6 +83,19 @@ Instructions for older versions of Ubuntu: https://help.ubuntu.com/community/Int
       ```shell
       python3 main.py -n peripheral
       ```
+
+## Running program to parse full log from "BLE Connect & RSSI Monitoring Program"
+After having connected two Raspberry Pis and having measured the RSSI, to get named measurements from logged output, 
+run the following:
+```shell
+python3 log_parser.py <Path to log file> [<Path to log file 2> ...]
+```
+
+Save output to file with:
+```shell
+python3 log_parser.py <Path to log file> [<Path to log file 2> ...] > output_file.csv
+```
+
 ## Running Low Level Bluetooth Testing Programs
 Go to the project folder on the Raspberry Pi
 ```shell
