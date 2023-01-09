@@ -12,6 +12,11 @@
 #include <bluetooth/hci.h>
 #include <bluetooth/hci_lib.h>
 #include <sys/ioctl.h>
+#include <pthread.h>
+
+int FLAG_QUIT = 0;
+pthread_mutex_t flag_quit_lock;
+pthread_t thread_receiver_id, thread_sender_id;
 
 /**
  * From https://github.com/pauloborges/bluez/blob/master/tools/hcitool.c#L77
@@ -30,14 +35,112 @@ static int dev_info(int s, int dev_id, long arg)
     return 0;
 }
 
+/**
+ * Get status of global quit flag.
+ * @return THe status of the quit flag.
+ */
+int get_flag_quit() {
+    int result = 0;
+    pthread_mutex_lock(&flag_quit_lock);
+    result = FLAG_QUIT == 1;
+    pthread_mutex_unlock(&flag_quit_lock);
+    return result;
+}
+
+/**
+ * Set status of global quit flag.
+ */
+ int set_flag_quit(int status) {
+    pthread_mutex_lock(&flag_quit_lock);
+    FLAG_QUIT = status;
+    pthread_mutex_unlock(&flag_quit_lock);
+ }
+
+/**
+ * Thread to receive messages from the client.
+ *
+ * @param th_args The thread argument.
+ * @return Nothing
+ */
+void *thread_receiver(void *th_args) {
+    long bytes_read;
+    char receive_msg_buf[673] = {0};
+    int *s = (int *)th_args;
+    int quit = 0;
+
+    while(!quit) {
+        if (get_flag_quit())
+            break;
+
+        memset(receive_msg_buf, 0, sizeof(receive_msg_buf));
+        bytes_read = read(*s, receive_msg_buf, sizeof(receive_msg_buf));
+
+        quit = strcmp(receive_msg_buf, "bye") == 0;
+
+        if( bytes_read > 0 )
+            printf("Client: %s\n", receive_msg_buf);
+        else
+            quit = 1;
+
+        if (quit) {
+            set_flag_quit(1);
+            pthread_cancel(thread_sender_id);
+        }
+
+    }
+
+    pthread_exit(NULL);
+}
+
+/**
+ * Thread to send messages to the client.
+ *
+ * @param th_args The thread argument.
+ * @return Nothing
+ */
+void *thread_sender(void *th_args) {
+    long status;
+    int max_send = 672, quit = 0;
+    char send_msg[673] = {0};
+    int *s = (int *)th_args;
+
+    while(quit != 1) {
+        if (get_flag_quit())
+            break;
+
+        memset(send_msg, 0, sizeof(send_msg));
+        fgets(send_msg, max_send, stdin);
+
+        // Remove trailing newlines
+        send_msg[strcspn(send_msg, "\n\r")] = 0;
+
+        status = write(*s, send_msg, strlen(send_msg));
+
+        if (status < 0) {
+            perror("Error sending message");
+            quit = 1;
+        }
+
+        quit = strcmp(send_msg, "bye") == 0;
+
+        // Set global quit
+        if (quit) {
+            set_flag_quit(1);
+            pthread_cancel(thread_receiver_id);
+        }
+
+    }
+
+    pthread_exit(NULL);
+}
+
 int main(int argc, char **argv)
 {
     struct sockaddr_l2 loc_addr = { 0 }, rem_addr = { 0 };
     char buf[1024] = { 0 };
     int s, client;
-    long bytes_read, status;
+    long status;
     socklen_t opt = sizeof(rem_addr);
-    char *message = "hello from server!";
 
     printf("Devices:\n");
     hci_for_each_dev(HCI_UP, dev_info, 0);
@@ -66,19 +169,15 @@ int main(int argc, char **argv)
 
     ba2str( &rem_addr.l2_bdaddr, buf );
     fprintf(stderr, "accepted connection from %s\n", buf);
+    printf("Begin sending messages below.\n");
 
-    memset(buf, 0, sizeof(buf));
+    // Start threads to send and receive data
+    pthread_create(&thread_receiver_id, NULL, thread_receiver, (void *)&client);
+    pthread_create(&thread_sender_id, NULL, thread_sender, (void *)&client);
 
-    // read data from the client
-    bytes_read = read(client, buf, sizeof(buf));
-    if( bytes_read > 0 ) {
-        printf("received [%s]\n", buf);
-    }
-
-    // send message back
-    status = write(client, message, 18);
-
-    if( status < 0 ) perror("uh oh");
+    // Wait for threads to finish
+    pthread_join(thread_receiver_id, NULL);
+    pthread_join(thread_sender_id, NULL);
 
     // close connection
     close(client);

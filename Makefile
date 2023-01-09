@@ -7,6 +7,7 @@ GCC = gcc
 
 # C Linking
 C_LINK_BLUEZ = -lbluetooth
+C_LINK_PTHREAD = -lpthread
 
 # Arguments
 all: l2cap-client l2cap-server
@@ -17,10 +18,10 @@ clean:
 
 # Programs
 l2cap-client: l2cap-client.c | build-dir
-	$(GCC) -o build/$@ $(word 2,$^) $< $(C_LINK_BLUEZ)
+	$(GCC) -o build/$@ $(word 2,$^) $< $(C_LINK_BLUEZ) $(C_LINK_PTHREAD)
 
 l2cap-server: l2cap-server.c | build-dir
-	$(GCC) -o build/$@ $(word 2,$^) $< $(C_LINK_BLUEZ)
+	$(GCC) -o build/$@ $(word 2,$^) $< $(C_LINK_BLUEZ) $(C_LINK_PTHREAD)
 
 # Prerequisites
 build-dir:
