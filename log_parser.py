@@ -84,6 +84,12 @@ def get_connection_monitoring_sections(
 def get_connection_monitoring_measurements(
         monitoring_sections: List[List[str]]) -> \
         List[Tuple[str, str, str, str, str]]:
+    """Get all measurements from the "connection monitoring" sections as
+    a list of tuples.
+
+    :param monitoring_sections: The raw "connection monitoring" sections.
+    :return: The measurements for each section as a list of tuples.
+    """
 
     measurements = []
     current_section = None, None
@@ -165,8 +171,6 @@ def run_parse_file(file_list: List[str]) -> None:
         total_measurements += \
             get_connection_monitoring_measurements(monitoring_sections)
 
-    # sorted_measurements = sorted(total_measurements, key=lambda x: x[0])
-    # sorted_measurements.insert(0, measurements_header)
     total_measurements.insert(0, measurements_header)
 
     for measurement_row in total_measurements:
